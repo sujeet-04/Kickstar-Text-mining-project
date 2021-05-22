@@ -1,0 +1,409 @@
+---
+title: "Assignment 3: Kickstarter Projects"
+---
+
+Text Mining Kickstarter Projects
+================================
+## Tasks for the Assignment
+
+### 1. Identifying Successful Projects
+
+#### a) Success by Category
+
+There are several ways to identify success of a project:  
+  - State (`state`): Whether a campaign was successful or not.   
+  - Pledged Amount (`pledged`)   
+  - Achievement Ratio: The variable `achievement_ratio` is calculating the percentage of the original monetary `goal` reached by the actual amount `pledged` (that is `pledged`\\`goal` *100).    
+  - Number of backers (`backers_count`)  
+  - How quickly the goal was reached (difference between `launched_at` and `state_changed_at`) for those campaigns that were successful.  
+
+Use one or more of these measures to visually summarize which categories were most successful in attracting funding on kickstarter. Briefly summarize your findings.
+
+```{r}
+
+#Load the Dataset.
+Text_dataset <- read.csv("kickstarter_projects_2021-03.csv",header = TRUE,na.strings = c("","NA"))
+head(Text_dataset)
+anyNA(Text_dataset)
+colSums(is.na(Text_dataset))
+
+#Remove the NA Values.
+Text_dataset2 <- as.data.frame(na.omit(Text_dataset))
+head(Text_dataset2)
+
+#Visualization library
+library(ggplot2)
+library(plotly)
+library(plotrix)
+
+str(Text_dataset2) #To see the structure of the dataset.
+attach(Text_dataset2)
+colnames(Text_dataset2) #To see the column names present in the datatset.
+
+state_df <- as.data.frame(table(Text_dataset2$state)) #TO see count of project final output
+head(state_df)
+
+#Pie chart to see what is distrbution of successfull, unsuccssefull project based on percentage.
+pie3D(round(state_df$Freq/sum(state_df$Freq)*100),labels = paste(state_df$Var1, round(state_df$Freq/sum(state_df$Freq)*100)), col=rainbow(length(state_df$Var1)),
+   main="Pie Chart of final output of the project") 
+#Out of the total project 55 percent were successful, while 39 percent were unsuccessful which is quite high, 1 percent is live which can be successful or Unsuccessful, and 5 percent were canceled.  
+
+```
+
+
+
+```{r}
+
+ggplot(Text_dataset2, aes(top_category, ..count..)) +theme(axis.text.x = element_text(angle = 90, vjust = 0.5,hjust=1))+ geom_bar(aes(fill = state), position = "dodge")
+
+ggplot(data=Text_dataset2, aes(x=state,pledged,fill = state)) +geom_bar(stat = "identity")+
+ facet_grid(~top_category)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5,hjust=1))+ggtitle("pledge earned of the project based on the Category")
+
+```
+
+```{r}
+
+#Achievement Ratio: The variable `achievement_ratio` is calculating the percentage of the original monetary `goal` reached by the actual amount `pledged` (that is `pledged`\\`goal` *100).    
+
+Text_dataset2$Achievement_Ratio <- round(pledged/goal*100,2)
+
+ggplot(data = Text_dataset2,mapping = aes(top_category,Achievement_Ratio))+geom_bar(stat = "identity")
+#  - Number of backers (`backers_count`)  
+
+ggplot(data = Text_dataset2,mapping = aes(top_category,backers_count))+geom_bar(stat = "identity")
+
+#  - How quickly the goal was reached (difference between `launched_at` and `state_changed_at`) for those campaigns that were successful.  
+success_data <- Text_dataset2[Text_dataset2$state=="successful",]
+attach(success_data)
+success_data$Goal_Reached <- as.Date(state_changed_at) - as.Date(launched_at)
+
+ggplot(success_data,mapping = aes(x =Goal_Reached,y = Achievement_Ratio))+geom_hex()
+
+```
+
+
+#### **BONUS ONLY:** b) Success by Location
+
+Now, use the location information to calculate the total number of successful projects by state (if you are ambitious, normalize by population). Also, identify the Top 50 "innovative" cities in the U.S. (by whatever measure you find plausible). Provide a leaflet map showing the most innovative states and cities in the U.S. on a single map based on these information.
+
+```{r}
+library(sp)
+library(leaflet)
+
+
+```
+### 2. Writing your success story
+
+Each project contains a `blurb` -- a short description of the project. While not the full description of the project, the short headline is arguably important for inducing interest in the project (and ultimately popularity and success). Let's analyze the text.
+
+#### a) Cleaning the Text and Word Cloud
+
+To reduce the time for analysis, select the 1000 most successful projects and a sample of 1000 unsuccessful projects. Use the cleaning functions introduced in lecture (or write your own in addition) to remove unnecessary words (stop words), syntax, punctuation, numbers, white space etc. Note, that many projects use their own unique brand names in upper cases, so try to remove these fully capitalized words as well (since we are aiming to identify common words across descriptions). Create a document-term-matrix.
+Provide a word cloud of the most frequent or important words (your choice which frequency measure you choose) among the most successful projects.
+
+```{r}
+library(dplyr)
+library(tm)
+library(textstem)
+library(SnowballC)
+library(syuzhet)
+library(lubridate)
+library(wordcloud2)
+library(tidytext)
+library(scales)
+library(reshape2)
+
+#Select top 1000 successfull project based on the achievement ratio.
+success_project <- top_n(Text_dataset2,1000,Text_dataset2$Achievement_Ratio)
+
+Success_Blurb <- Corpus(VectorSource(success_project$blurb))
+inspect(Success_Blurb)
+
+# Transform the uppercase data into lower case
+Success_Blurb <- tm_map(Success_Blurb,content_transformer(tolower)) 
+
+#Remove the numbers from the Blurbs.
+Success_Blurb <- tm_map(Success_Blurb,removeNumbers) 
+
+#Remove all the stopwords from blurbs
+Success_Blurb <- tm_map(Success_Blurb,removeWords,stopwords("english")) 
+inspect(Success_Blurb)
+#remove the custom stopwords    
+Success_Blurb <- tm_map(Success_Blurb,removeWords,c("the","that","was","have","there",
+                                                  "to","can","its","could","has","this","for",
+                                                  "so"))
+
+#Remove punctuation from the blurbs
+Success_Blurb <- tm_map(Success_Blurb,removePunctuation)
+
+#Remove the white space.
+Success_Blurb <- tm_map(Success_Blurb,stripWhitespace)
+
+#generate root from the inflected word
+Success_Blurb <- tm_map(Success_Blurb,stemDocument)
+    
+#create a term document matrix
+Success_TDM <- TermDocumentMatrix(Success_Blurb)
+
+#Transform into matrix
+Success_matrix <- as.matrix(Success_TDM) 
+
+#sum out the total frequency of a particluar words
+Success_wordfreq <- rowSums(Success_matrix) 
+
+#subset the words that have frequency more than 10
+Success_wordfreq2 <- subset(Success_wordfreq,Success_wordfreq>30)  
+
+barplot(Success_wordfreq2,las=2,col=rainbow(7))
+
+#Transform the matrix into data frame.
+Blurb_data <- data.frame(Success_matrix) 
+#sort out the words in decreasing order according to frequency.
+Success_wordfreq3 <- sort(rowSums(Blurb_data),decreasing = TRUE) 
+    
+Success_wordfreq4 <- data.frame(rownames(Success_matrix),rowSums(Success_matrix))
+colnames(Success_wordfreq4) <- c("Word","Frequency")
+    
+  
+wordcloud2(Success_wordfreq4,size = 0.5,minSize =0.5,shape = "star",color = rainbow(50))
+
+```
+
+```{r}
+
+#Select top 1000 unsuccessful project based on achievement ratio.
+Unsuccessfull_project <- top_n(Text_dataset2,-1000,Text_dataset2$Achievement_Ratio)
+Unsuccessfull_project$Goal_Reached <- as.Date(Unsuccessfull_project$state_changed_at) - as.Date(Unsuccessfull_project$launched_at)
+#Select top 1000 unsuccessful project based on achievement reached.
+Unsuccessfull_project2 <- top_n(Unsuccessfull_project,1000,Unsuccessfull_project$Goal_Reached)
+
+Unsuccess_Blurb <- Corpus(VectorSource(Unsuccessfull_project2$blurb))
+inspect(Unsuccess_Blurb)
+
+# Transform the uppercase data into lower case
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,content_transformer(tolower)) 
+
+#Remove the numbers from the Blurbs.
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,removeNumbers) 
+
+#Remove all the stopwords from blurbs
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,removeWords,stopwords("english")) 
+inspect(Unsuccess_Blurb)
+#remove the custom stopwords    
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,removeWords,c("the","that","was","have","there",
+                                                  "to","can","its","could","has","this","for",
+                                                  "so"))
+
+#Remove punctuation from the blurbs
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,removePunctuation)
+
+#Remove the white space.
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,stripWhitespace)
+
+#generate root from the inflected word
+Unsuccess_Blurb <- tm_map(Unsuccess_Blurb,stemDocument)
+    
+#create a term document matrix
+Unsuccess_TDM <- TermDocumentMatrix(Unsuccess_Blurb)
+
+#Transform into matrix
+Unsuccess_matrix <- as.matrix(Unsuccess_TDM) 
+
+#sum out the total frequency of a particluar words
+Unsuccess_wordfreq <- rowSums(Unsuccess_matrix) 
+
+#subset the words that have frequency more than 10
+Unsuccess_wordfreq2 <- subset(Unsuccess_wordfreq,Unsuccess_wordfreq>30)  
+
+barplot(Unsuccess_wordfreq2,las=2,col=rainbow(7))
+
+#Transform the matrix into data frame.
+Blurb_data2 <- data.frame(Unsuccess_matrix) 
+#sort out the words in decreasing order according to frequency.
+Unsuccess_wordfreq3 <- sort(rowSums(Blurb_data2),decreasing = TRUE) 
+    
+Unsuccess_wordfreq4 <- data.frame(rownames(Unsuccess_matrix),rowSums(Unsuccess_matrix))
+colnames(Unsuccess_wordfreq4) <- c("Word","Frequency")
+    
+  
+wordcloud2(Unsuccess_wordfreq4,size = 0.5,minSize =0.5,shape = "star",color = rainbow(50))
+
+
+```
+
+
+
+#### b) Success in words
+
+Provide a pyramid plot to show how the words between successful and unsuccessful projects differ in frequency. A selection of 10 - 20 top words is sufficient here. 
+
+```{r}
+Mix_data <- inner_join(Success_wordfreq4,Unsuccess_wordfreq4,by = c("Word"))
+colnames(Mix_data) <- c("Word","Successful","Unsuccessful") 
+head(Mix_data)
+# calculate common words and difference between their count in successful and unsuccessful projects.
+Diff <- abs(Mix_data[, 2] - Mix_data[, 3])
+common_words <- cbind(Mix_data, Diff)
+head(common_words)
+common_words <- common_words[order(common_words[, 4],decreasing = T), ]
+head(common_words)
+
+top20_Diff <- data.frame(Successful = common_words[1:20, 2],
+                         Unsuccessful = common_words[1:20, 3],
+                         labels = common_words[1:20,1])
+
+head(top20_Diff)
+# Make pyramid plot
+attach(top20_Diff)
+pyramid.plot(Successful, Unsuccessful,labels = labels, 
+             main = "Words in Common",gap = 25,
+             laxlab = NULL,raxlab = NULL,unit = NULL,
+             top.labels = c("Successful","Words","Unsuccessful"))
+
+```
+
+
+#### c) Simplicity as a virtue
+
+These blurbs are short in length (max. 150 characters) but let's see whether brevity and simplicity still matters. Calculate a readability measure (Flesh Reading Ease, Flesh Kincaid or any other comparable measure) for the texts. Visualize the relationship between the readability measure and one of the measures of success. Briefly comment on your finding.
+
+```{r}
+library(quanteda)
+Score <-  textstat_readability(Text_dataset2$blurb,measure = "Flesch",remove_hyphens = TRUE,
+                                             min_sentence_length = 1,max_sentence_length = 200)
+
+Text_dataset2$Readability_Score <- Score$Flesch
+Text_dataset2$Readability_Score <- round(Text_dataset2$Readability_Score,2)
+
+ggplot(data = Text_dataset2,mapping = aes(y = Readability_Score,x = state,fill = state))+geom_boxplot()
+
+ggplot(data = Text_dataset2,mapping = aes(y = Readability_Score,x = Achievement_Ratio,fill = state))+geom_line()
+
+```
+
+### 3. Sentiment
+
+Now, let's check whether the use of positive / negative words or specific emotions helps a project to be successful. 
+
+#### a) Stay positive
+
+Calculate the tone of each text based on the positive and negative words that are being used. You can rely on the Hu & Liu dictionary provided in lecture or use the Bing dictionary contained in the tidytext package (`tidytext::sentiments`). Visualize the relationship between tone of the document and success. Briefly comment.
+
+```{r}
+#Analyzing the sentiment by bing method
+#In this method we analyze each sentence and score it the bing lexicon transform
+#the sentence into binary and score it,for negative values less than zero and for 
+#positive value greater than 0 assigned.
+
+sentiment_Score <- get_sentiment(Text_dataset2$blurb, method = "bing")
+sentiment_Score
+range(sentiment_Score)
+head(sentiment_Score)
+
+Text_dataset2$Sent_score <- sentiment_Score
+Text_dataset3 <- Text_dataset2
+Text_dataset3$Sent_score <- as.factor(Text_dataset3$Sent_score)
+#Visualization of all the sentences and there scores.
+
+ggplot(Text_dataset3, aes(top_category, ..count..)) +theme(axis.text.x = element_text(angle = 90, vjust = 0.5,hjust=1))+ geom_bar(aes(fill = Sent_score), position = "dodge")
+
+ggplot(Text_dataset3, aes(state, ..count..)) +theme(axis.text.x = element_text(angle = 90, vjust = 0.5,hjust=1))+ geom_bar(aes(fill = Sent_score), position = "dodge")
+
+```
+#### b) Positive vs negative
+
+Segregate all 2,000 blurbs into positive and negative texts based on their polarity score calculated in step (a). Now, collapse the positive and negative texts into two larger documents. Create a document-term-matrix based on this collapsed set of two documents. Generate a comparison cloud showing the most-frequent positive and negative words.  
+
+
+```{r}
+#For positive sentences
+
+Text_dataset4 <- Text_dataset2[Text_dataset2$Sent_score > 0,]
+Text_dataset4 <- Text_dataset4[1:1000,]
+
+positive_sentence2 <- Corpus(VectorSource(Text_dataset4$blurb)) #Transform into corpus
+positive_sentence2 <- tm_map(positive_sentence2,content_transformer(tolower)) 
+positive_sentence2 <- tm_map(positive_sentence2,removeNumbers) 
+positive_sentence2 <- tm_map(positive_sentence2,removeWords,stopwords("english")) 
+positive_sentence2 <- tm_map(positive_sentence2,removeWords,c("the","that","was","have","there",
+                                                  "to","can","its","could","has","this","for",
+                                                  "so"))
+positive_sentence2 <- tm_map(positive_sentence2,removePunctuation)
+positive_sentence2 <- tm_map(positive_sentence2,stripWhitespace)
+positive_sentence2 <- tm_map(positive_sentence2,stemDocument)
+Positive_TDM <- TermDocumentMatrix(positive_sentence2)
+
+positive_matrix <- as.matrix(Positive_TDM)# Transform into matrix
+head(positive_matrix)
+#create a data set containing words and its frequency.
+positive_data <- data.frame(rownames(positive_matrix),rowSums(positive_matrix))
+colnames(positive_data) <- c("Word","Frequency")
+
+wordcloud2(positive_data,size = 1,minSize = 1,shape = "star",color = rainbow(7))
+
+# and to extract the most positive sentence
+positive <- Text_dataset4$blurb[which.max(Text_dataset4$Sent_score)]
+positive
+
+```
+
+```{r}
+#For Negative sentences
+
+Text_dataset5 <- Text_dataset2[Text_dataset2$Sent_score < 0,]
+Text_dataset5 <- Text_dataset5[1:1000,]
+
+Negative_sentence2 <- Corpus(VectorSource(Text_dataset4$blurb)) #Transform into corpus
+inspect(Negative_sentence2)
+Negative_sentence2 <- tm_map(Negative_sentence2,content_transformer(tolower)) 
+Negative_sentence2 <- tm_map(Negative_sentence2,removeNumbers) 
+Negative_sentence2 <- tm_map(Negative_sentence2,removeWords,stopwords("english")) 
+inspect(Negative_sentence2)
+Negative_sentence2 <- tm_map(Negative_sentence2,removeWords,c("the","that","was","have","there",
+                                                  "to","can","its","could","has","this","for",
+                                                  "so"))
+Negative_sentence2 <- tm_map(Negative_sentence2,removePunctuation)
+Negative_sentence2 <- tm_map(Negative_sentence2,stripWhitespace)
+Negative_sentence2 <- tm_map(Negative_sentence2,stemDocument)
+inspect(Negative_sentence2)
+
+Negative_tdm <- TermDocumentMatrix(Negative_sentence2)#create a term doccument matrix
+Negative_tdm
+
+Negative_matrix <- as.matrix(Negative_tdm)# Transform into matrix
+head(Negative_matrix)
+
+Negative_data <- data.frame(rownames(Negative_matrix),rowSums(Negative_matrix))#create a data set containing words and its frequency.
+colnames(Negative_data) <- c("Word","Frequency")
+
+
+wordcloud2(Negative_data,size = 1,minSize = 1,shape = "star",color = rainbow(7))
+
+# To extract the sentence with the most negative emotional valence
+negative <- Text_dataset5$blurb[which.min(Text_dataset5$Sent_score)]
+negative
+
+```
+#### c) Get in their mind
+
+Now, use the NRC Word-Emotion Association Lexicon in the `tidytext` package to identify a larger set of emotions (anger, anticipation, disgust, fear, joy, sadness, surprise, trust). Again, visualize the relationship between the use of words from these categories and success. What is your finding?
+
+```{r}
+#Types of emotion for successful projects
+sentment <- get_nrc_sentiment(paste(success_project$blurb,collapse = ","))
+head(sentment)
+
+barplot(colSums(sentment),las=2,col = rainbow(10),ylab = 'count')
+
+#Types of emotion for Unsuccessful Projects.
+sentment <- get_nrc_sentiment(paste(Unsuccessfull_project$blurb,collapse = ","))
+head(sentment)
+
+barplot(colSums(sentment),las=2,col = rainbow(10),ylab = 'count')
+
+```
+
+
+## Please stay honest!
+
+If you do come across something online that provides part of the analysis / code etc., please no wholesale copying of other ideas. We are trying to evaluate your abilities to visualized data not the ability to do internet searches. Also, this is an individually assigned exercise -- please keep your solution to yourself. 
